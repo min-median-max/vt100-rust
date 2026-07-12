@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+* DEC Special Graphics (line drawing) character set support: `ESC ( <final>` /
+  `ESC ) <final>` designation of a character set into G0/G1, SO/SI to invoke a
+  G-set into GL, glyph translation on print (the ASCII range `0x5f..=0x7e` maps
+  to the box-drawing and symbol glyphs), DECSC/DECRC save and restore of the
+  charset state, and persistence across the alternate screen.
+
 ## [0.16.2] - 2025-07-11
 
 ### Fixed

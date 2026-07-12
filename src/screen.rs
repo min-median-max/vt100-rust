@@ -7,6 +7,39 @@ const MODE_HIDE_CURSOR: u8 = 0b0000_0100;
 const MODE_ALTERNATE_SCREEN: u8 = 0b0000_1000;
 const MODE_BRACKETED_PASTE: u8 = 0b0001_0000;
 
+// The character set designated into a G-set slot. Only the two sets needed to
+// render DEC line-drawing TUIs are modeled: US ASCII (the default) and the DEC
+// Special Graphics set, which maps the ASCII range 0x5f..=0x7e to box-drawing
+// and other symbols. Other 94-character sets fall through as unhandled.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+enum Charset {
+    #[default]
+    Ascii,
+    DecSpecialGraphics,
+}
+
+impl Charset {
+    // Designates the set for an `ESC ( <final>` / `ESC ) <final>` final byte,
+    // or returns `None` for a final this parser does not implement.
+    fn from_final(b: u8) -> Option<Self> {
+        match b {
+            b'B' => Some(Self::Ascii),
+            b'0' => Some(Self::DecSpecialGraphics),
+            _ => None,
+        }
+    }
+
+    // Maps a printable character through this set. ASCII is the identity; DEC
+    // Special Graphics translates its 0x5f..=0x7e range and passes everything
+    // else through unchanged.
+    fn map(self, c: char) -> char {
+        match self {
+            Self::Ascii => c,
+            Self::DecSpecialGraphics => dec_special_graphics(c),
+        }
+    }
+}
+
 /// The xterm mouse handling mode currently in use.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum MouseProtocolMode {
@@ -62,6 +95,14 @@ pub struct Screen {
     modes: u8,
     mouse_protocol_mode: MouseProtocolMode,
     mouse_protocol_encoding: MouseProtocolEncoding,
+
+    // G0/G1 character set designations and the G-set currently invoked into
+    // GL (0 = G0 via SI, 1 = G1 via SO). Terminal-global state: it survives the
+    // alternate-screen switch and is saved/restored by DECSC/DECRC.
+    charset: [Charset; 2],
+    charset_gl: usize,
+    saved_charset: [Charset; 2],
+    saved_charset_gl: usize,
 }
 
 impl Screen {
@@ -81,6 +122,11 @@ impl Screen {
             modes: 0,
             mouse_protocol_mode: MouseProtocolMode::default(),
             mouse_protocol_encoding: MouseProtocolEncoding::default(),
+
+            charset: [Charset::default(); 2],
+            charset_gl: 0,
+            saved_charset: [Charset::default(); 2],
+            saved_charset_gl: 0,
         }
     }
 
@@ -661,11 +707,15 @@ impl Screen {
     fn save_cursor(&mut self) {
         self.grid_mut().save_cursor();
         self.saved_attrs = self.attrs;
+        self.saved_charset = self.charset;
+        self.saved_charset_gl = self.charset_gl;
     }
 
     fn restore_cursor(&mut self) {
         self.grid_mut().restore_cursor();
         self.attrs = self.saved_attrs;
+        self.charset = self.saved_charset;
+        self.charset_gl = self.saved_charset_gl;
     }
 
     fn set_mode(&mut self, mode: u8) {
@@ -703,6 +753,9 @@ impl Screen {
 
 impl Screen {
     pub(crate) fn text(&mut self, c: char) {
+        // Translate through the active character set before measuring width or
+        // storing: the DEC line-drawing glyphs are what actually occupy the cell.
+        let c = self.charset[self.charset_gl].map(c);
         let pos = self.grid().pos();
         let size = self.grid().size();
         let attrs = self.attrs;
@@ -977,6 +1030,31 @@ impl Screen {
     // ESC 8
     pub(crate) fn decrc(&mut self) {
         self.restore_cursor();
+    }
+
+    // ESC ( <final> / ESC ) <final> — designate a 94-character set into a G-set
+    // slot (0 = G0, 1 = G1). Returns whether the final byte was recognized.
+    pub(crate) fn designate_charset(
+        &mut self,
+        gset: usize,
+        final_byte: u8,
+    ) -> bool {
+        if let Some(cs) = Charset::from_final(final_byte) {
+            self.charset[gset] = cs;
+            true
+        } else {
+            false
+        }
+    }
+
+    // SO (shift out) — invoke G1 into GL.
+    pub(crate) fn shift_out(&mut self) {
+        self.charset_gl = 1;
+    }
+
+    // SI (shift in) — invoke G0 into GL.
+    pub(crate) fn shift_in(&mut self) {
+        self.charset_gl = 0;
     }
 
     // ESC =
@@ -1350,5 +1428,46 @@ fn u16_to_u8(i: u16) -> Option<u8> {
     } else {
         // safe because we just ensured that the value fits in a u8
         Some(i.try_into().unwrap())
+    }
+}
+
+// The VT100 DEC Special Graphics character set: the ASCII range 0x5f..=0x7e
+// renders as the line-drawing and symbol glyphs used by curses/tmux/vim TUI
+// borders. Every other character passes through unchanged.
+fn dec_special_graphics(c: char) -> char {
+    match c {
+        '_' => '\u{00a0}', // no-break space
+        '`' => '\u{25c6}', // ◆ black diamond
+        'a' => '\u{2592}', // ▒ medium shade
+        'b' => '\u{2409}', // ␉ horizontal tab
+        'c' => '\u{240c}', // ␌ form feed
+        'd' => '\u{240d}', // ␍ carriage return
+        'e' => '\u{240a}', // ␊ line feed
+        'f' => '\u{00b0}', // ° degree
+        'g' => '\u{00b1}', // ± plus-minus
+        'h' => '\u{2424}', // ␤ newline
+        'i' => '\u{240b}', // ␋ vertical tab
+        'j' => '\u{2518}', // ┘ lower-right corner
+        'k' => '\u{2510}', // ┐ upper-right corner
+        'l' => '\u{250c}', // ┌ upper-left corner
+        'm' => '\u{2514}', // └ lower-left corner
+        'n' => '\u{253c}', // ┼ crossing lines
+        'o' => '\u{23ba}', // ⎺ scan line 1
+        'p' => '\u{23bb}', // ⎻ scan line 3
+        'q' => '\u{2500}', // ─ horizontal line
+        'r' => '\u{23bc}', // ⎼ scan line 7
+        's' => '\u{23bd}', // ⎽ scan line 9
+        't' => '\u{251c}', // ├ left tee
+        'u' => '\u{2524}', // ┤ right tee
+        'v' => '\u{2534}', // ┴ bottom tee
+        'w' => '\u{252c}', // ┬ top tee
+        'x' => '\u{2502}', // │ vertical line
+        'y' => '\u{2264}', // ≤ less than or equal
+        'z' => '\u{2265}', // ≥ greater than or equal
+        '{' => '\u{03c0}', // π greek pi
+        '|' => '\u{2260}', // ≠ not equal
+        '}' => '\u{00a3}', // £ pound sterling
+        '~' => '\u{00b7}', // · centered dot
+        _ => c,
     }
 }

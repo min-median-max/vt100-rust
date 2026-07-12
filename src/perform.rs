@@ -48,23 +48,38 @@ impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
             11 => self.screen.vt(),
             12 => self.screen.ff(),
             13 => self.screen.cr(),
-            // we don't implement shift in/out alternate character sets, but
-            // it shouldn't count as an "error"
-            14 | 15 => {}
+            // SO (shift out) invokes G1 into GL, SI (shift in) invokes G0.
+            14 => self.screen.shift_out(),
+            15 => self.screen.shift_in(),
             _ => self.callbacks.unhandled_control(&mut self.screen, b),
         }
     }
 
     fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, b: u8) {
-        if let Some(i) = intermediates.first() {
-            self.callbacks.unhandled_escape(
-                &mut self.screen,
-                Some(*i),
-                intermediates.get(1).copied(),
-                b,
-            );
-        } else {
-            match b {
+        match intermediates.first().copied() {
+            // ESC ( <final> / ESC ) <final> — designate a character set into
+            // G0 / G1. Finals this parser does not implement fall through to
+            // the unhandled-escape callback.
+            Some(g @ (b'(' | b')')) => {
+                let gset = usize::from(g == b')');
+                if !self.screen.designate_charset(gset, b) {
+                    self.callbacks.unhandled_escape(
+                        &mut self.screen,
+                        Some(g),
+                        intermediates.get(1).copied(),
+                        b,
+                    );
+                }
+            }
+            Some(i) => {
+                self.callbacks.unhandled_escape(
+                    &mut self.screen,
+                    Some(i),
+                    intermediates.get(1).copied(),
+                    b,
+                );
+            }
+            None => match b {
                 b'7' => self.screen.decsc(),
                 b'8' => self.screen.decrc(),
                 b'=' => self.screen.deckpam(),
@@ -80,7 +95,7 @@ impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
                         b,
                     );
                 }
-            }
+            },
         }
     }
 
