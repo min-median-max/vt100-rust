@@ -215,6 +215,9 @@ impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], _bel_terminated: bool) {
+        if apply_color_osc(&mut self.screen, params) {
+            return;
+        }
         match params {
             [b"0", s] => {
                 self.callbacks.set_window_icon_name(&mut self.screen, s);
@@ -255,6 +258,104 @@ impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
             }
         }
     }
+}
+
+fn apply_color_osc(screen: &mut crate::Screen, params: &[&[u8]]) -> bool {
+    match params {
+        [b"4", values @ ..]
+            if !values.is_empty() && values.len() % 2 == 0 =>
+        {
+            let parsed: Option<Vec<(u8, crate::RgbColor)>> = values
+                .chunks_exact(2)
+                .map(|pair| {
+                    Some((parse_index(pair[0])?, parse_rgb(pair[1])?))
+                })
+                .collect();
+            let Some(parsed) = parsed else { return false };
+            for (index, color) in parsed {
+                screen.set_palette_override(index, color);
+            }
+            true
+        }
+        [b"104"] => {
+            screen.reset_palette_overrides();
+            true
+        }
+        [b"104", values @ ..] if !values.is_empty() => {
+            let parsed: Option<Vec<u8>> =
+                values.iter().map(|value| parse_index(value)).collect();
+            let Some(parsed) = parsed else { return false };
+            for index in parsed {
+                screen.reset_palette_override(index);
+            }
+            true
+        }
+        [b"10", value] => parse_rgb(value).is_some_and(|color| {
+            screen.set_foreground_override(color);
+            true
+        }),
+        [b"11", value] => parse_rgb(value).is_some_and(|color| {
+            screen.set_background_override(color);
+            true
+        }),
+        [b"12", value] => parse_rgb(value).is_some_and(|color| {
+            screen.set_cursor_color_override(color);
+            true
+        }),
+        [b"110"] => {
+            screen.reset_foreground_override();
+            true
+        }
+        [b"111"] => {
+            screen.reset_background_override();
+            true
+        }
+        [b"112"] => {
+            screen.reset_cursor_color_override();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn parse_index(value: &[u8]) -> Option<u8> {
+    std::str::from_utf8(value).ok()?.parse().ok()
+}
+
+fn parse_rgb(value: &[u8]) -> Option<crate::RgbColor> {
+    if let Some(hex) = value.strip_prefix(b"#") {
+        if !matches!(hex.len(), 3 | 6 | 9 | 12) {
+            return None;
+        }
+        let width = hex.len() / 3;
+        return Some(crate::RgbColor {
+            r: parse_component(&hex[..width])?,
+            g: parse_component(&hex[width..width * 2])?,
+            b: parse_component(&hex[width * 2..])?,
+        });
+    }
+    let components = value
+        .strip_prefix(b"rgb:")?
+        .split(|byte| *byte == b'/')
+        .collect::<Vec<_>>();
+    if components.len() != 3 {
+        return None;
+    }
+    Some(crate::RgbColor {
+        r: parse_component(components[0])?,
+        g: parse_component(components[1])?,
+        b: parse_component(components[2])?,
+    })
+}
+
+fn parse_component(value: &[u8]) -> Option<u8> {
+    if value.is_empty() || value.len() > 4 {
+        return None;
+    }
+    let digits = std::str::from_utf8(value).ok()?;
+    let number = u32::from_str_radix(digits, 16).ok()?;
+    let maximum = (1u32 << (value.len() * 4)) - 1;
+    Some(((number * 255 + maximum / 2) / maximum) as u8)
 }
 
 fn canonicalize_params_1(params: &vte::Params, default: u16) -> u16 {

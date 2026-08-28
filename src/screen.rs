@@ -104,6 +104,41 @@ pub struct CursorStyle {
     pub blinking: bool,
 }
 
+/// An RGB color set by a terminal OSC sequence.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct RgbColor {
+    /// Red component.
+    pub r: u8,
+    /// Green component.
+    pub g: u8,
+    /// Blue component.
+    pub b: u8,
+}
+
+/// Raw terminal color overrides. `None` means the embedding application's current base color.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ThemeOverrides {
+    /// OSC 10 foreground override.
+    pub foreground: Option<RgbColor>,
+    /// OSC 11 background override.
+    pub background: Option<RgbColor>,
+    /// OSC 12 cursor override.
+    pub cursor: Option<RgbColor>,
+    /// OSC 4 palette overrides by index.
+    pub ansi: [Option<RgbColor>; 256],
+}
+
+impl Default for ThemeOverrides {
+    fn default() -> Self {
+        Self {
+            foreground: None,
+            background: None,
+            cursor: None,
+            ansi: [None; 256],
+        }
+    }
+}
+
 impl Default for CursorStyle {
     fn default() -> Self {
         Self {
@@ -126,6 +161,7 @@ pub struct Screen {
     mouse_protocol_mode: MouseProtocolMode,
     mouse_protocol_encoding: MouseProtocolEncoding,
     cursor_style: CursorStyle,
+    theme_overrides: ThemeOverrides,
 
     // G0/G1 character set designations and the G-set currently invoked into
     // GL (0 = G0 via SI, 1 = G1 via SO). Terminal-global state: it survives the
@@ -154,6 +190,7 @@ impl Screen {
             mouse_protocol_mode: MouseProtocolMode::default(),
             mouse_protocol_encoding: MouseProtocolEncoding::default(),
             cursor_style: CursorStyle::default(),
+            theme_overrides: ThemeOverrides::default(),
 
             charset: [Charset::default(); 2],
             charset_gl: 0,
@@ -709,6 +746,52 @@ impl Screen {
     #[must_use]
     pub fn bgcolor(&self) -> crate::Color {
         self.attrs.bgcolor
+    }
+
+    /// Returns the raw OSC 4/10/11/12 overrides interpreted by this screen.
+    #[must_use]
+    pub fn theme_overrides(&self) -> &ThemeOverrides {
+        &self.theme_overrides
+    }
+
+    pub(crate) fn set_palette_override(
+        &mut self,
+        index: u8,
+        color: RgbColor,
+    ) {
+        self.theme_overrides.ansi[index as usize] = Some(color);
+    }
+
+    pub(crate) fn reset_palette_override(&mut self, index: u8) {
+        self.theme_overrides.ansi[index as usize] = None;
+    }
+
+    pub(crate) fn reset_palette_overrides(&mut self) {
+        self.theme_overrides.ansi = [None; 256];
+    }
+
+    pub(crate) fn set_foreground_override(&mut self, color: RgbColor) {
+        self.theme_overrides.foreground = Some(color);
+    }
+
+    pub(crate) fn set_background_override(&mut self, color: RgbColor) {
+        self.theme_overrides.background = Some(color);
+    }
+
+    pub(crate) fn set_cursor_color_override(&mut self, color: RgbColor) {
+        self.theme_overrides.cursor = Some(color);
+    }
+
+    pub(crate) fn reset_foreground_override(&mut self) {
+        self.theme_overrides.foreground = None;
+    }
+
+    pub(crate) fn reset_background_override(&mut self) {
+        self.theme_overrides.background = None;
+    }
+
+    pub(crate) fn reset_cursor_color_override(&mut self) {
+        self.theme_overrides.cursor = None;
     }
 
     /// Returns whether newly drawn text should be rendered with the bold text
