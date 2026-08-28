@@ -198,6 +198,10 @@ impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
                     );
                 }
             },
+            Some(b' ') if c == 'q' => {
+                self.screen
+                    .set_cursor_style(canonicalize_params_1(params, 0));
+            }
             Some(i) => {
                 self.callbacks.unhandled_csi(
                     &mut self.screen,

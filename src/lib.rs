@@ -61,4 +61,7 @@ pub use attrs::Color;
 pub use callbacks::Callbacks;
 pub use cell::Cell;
 pub use parser::Parser;
-pub use screen::{MouseProtocolEncoding, MouseProtocolMode, Screen};
+pub use screen::{
+    CursorShape, CursorStyle, MouseProtocolEncoding, MouseProtocolMode,
+    Screen,
+};

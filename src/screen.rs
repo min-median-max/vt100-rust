@@ -83,6 +83,36 @@ pub enum MouseProtocolEncoding {
     // Urxvt,
 }
 
+/// Terminal cursor shape selected by DECSCUSR.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+pub enum CursorShape {
+    /// Filled block cursor.
+    #[default]
+    Block,
+    /// Underline cursor.
+    Underline,
+    /// Vertical bar cursor.
+    Bar,
+}
+
+/// Parsed terminal cursor shape and blink state.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct CursorStyle {
+    /// Selected cursor shape.
+    pub shape: CursorShape,
+    /// Whether the cursor blinks.
+    pub blinking: bool,
+}
+
+impl Default for CursorStyle {
+    fn default() -> Self {
+        Self {
+            shape: CursorShape::Block,
+            blinking: true,
+        }
+    }
+}
+
 /// Represents the overall terminal state.
 #[derive(Clone, Debug)]
 pub struct Screen {
@@ -95,6 +125,7 @@ pub struct Screen {
     modes: u8,
     mouse_protocol_mode: MouseProtocolMode,
     mouse_protocol_encoding: MouseProtocolEncoding,
+    cursor_style: CursorStyle,
 
     // G0/G1 character set designations and the G-set currently invoked into
     // GL (0 = G0 via SI, 1 = G1 via SO). Terminal-global state: it survives the
@@ -122,6 +153,7 @@ impl Screen {
             modes: 0,
             mouse_protocol_mode: MouseProtocolMode::default(),
             mouse_protocol_encoding: MouseProtocolEncoding::default(),
+            cursor_style: CursorStyle::default(),
 
             charset: [Charset::default(); 2],
             charset_gl: 0,
@@ -611,6 +643,42 @@ impl Screen {
     #[must_use]
     pub fn hide_cursor(&self) -> bool {
         self.mode(MODE_HIDE_CURSOR)
+    }
+
+    /// Returns the parsed DECSCUSR shape and cursor blink state.
+    #[must_use]
+    pub fn cursor_style(&self) -> CursorStyle {
+        self.cursor_style
+    }
+
+    pub(crate) fn set_cursor_style(&mut self, parameter: u16) {
+        self.cursor_style = match parameter {
+            0 | 1 => CursorStyle {
+                shape: CursorShape::Block,
+                blinking: true,
+            },
+            2 => CursorStyle {
+                shape: CursorShape::Block,
+                blinking: false,
+            },
+            3 => CursorStyle {
+                shape: CursorShape::Underline,
+                blinking: true,
+            },
+            4 => CursorStyle {
+                shape: CursorShape::Underline,
+                blinking: false,
+            },
+            5 => CursorStyle {
+                shape: CursorShape::Bar,
+                blinking: true,
+            },
+            6 => CursorStyle {
+                shape: CursorShape::Bar,
+                blinking: false,
+            },
+            _ => self.cursor_style,
+        };
     }
 
     /// Returns whether the terminal should be in bracketed paste mode.
@@ -1224,6 +1292,7 @@ impl Screen {
                 [1] => self.set_mode(MODE_APPLICATION_CURSOR),
                 [6] => self.grid_mut().set_origin_mode(true),
                 [9] => self.set_mouse_mode(MouseProtocolMode::Press),
+                [12] => self.cursor_style.blinking = true,
                 [25] => self.clear_mode(MODE_HIDE_CURSOR),
                 [47] => self.enter_alternate_grid(),
                 [1000] => {
@@ -1261,6 +1330,7 @@ impl Screen {
                 [1] => self.clear_mode(MODE_APPLICATION_CURSOR),
                 [6] => self.grid_mut().set_origin_mode(false),
                 [9] => self.clear_mouse_mode(MouseProtocolMode::Press),
+                [12] => self.cursor_style.blinking = false,
                 [25] => self.set_mode(MODE_HIDE_CURSOR),
                 [47] => {
                     self.exit_alternate_grid();
