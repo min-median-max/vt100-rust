@@ -919,11 +919,11 @@ impl Screen {
         index: u8,
         color: RgbColor,
     ) {
-        self.theme_overrides.ansi[index as usize] = Some(color);
+        self.theme_overrides.ansi[usize::from(index)] = Some(color);
     }
 
     pub(crate) fn reset_palette_override(&mut self, index: u8) {
-        self.theme_overrides.ansi[index as usize] = None;
+        self.theme_overrides.ansi[usize::from(index)] = None;
     }
 
     pub(crate) fn reset_palette_overrides(&mut self) {
