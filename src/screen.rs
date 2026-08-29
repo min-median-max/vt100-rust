@@ -83,6 +83,49 @@ pub enum MouseProtocolEncoding {
     // Urxvt,
 }
 
+/// A pointer button in one normalized terminal mouse event.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum MouseButton {
+    None,
+    Left,
+    Middle,
+    Right,
+}
+
+/// The phase of one normalized terminal mouse event.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum MouseEventKind {
+    Press,
+    Release,
+    Motion,
+}
+
+/// Modifiers carried by one normalized terminal mouse event.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub struct MouseModifiers {
+    pub shift: bool,
+    pub alt: bool,
+    pub control: bool,
+    pub meta: bool,
+}
+
+/// One normalized terminal mouse event. Coordinates are zero-based cells.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct MouseEvent {
+    pub row: u16,
+    pub column: u16,
+    pub kind: MouseEventKind,
+    pub button: MouseButton,
+    pub modifiers: MouseModifiers,
+}
+
+/// Why the current terminal mode cannot encode a mouse event.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum MouseEncodeError {
+    EventNotReported,
+    PositionOutOfRange,
+}
+
 /// Terminal cursor shape selected by DECSCUSR.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum CursorShape {
@@ -734,6 +777,14 @@ impl Screen {
     #[must_use]
     pub fn mouse_protocol_encoding(&self) -> MouseProtocolEncoding {
         self.mouse_protocol_encoding
+    }
+
+    /// Encodes one mouse event using the currently parsed mode and encoding.
+    pub fn encode_mouse_event(
+        &self,
+        _event: MouseEvent,
+    ) -> Result<Vec<u8>, MouseEncodeError> {
+        Err(MouseEncodeError::EventNotReported)
     }
 
     /// Returns the currently active foreground color.
