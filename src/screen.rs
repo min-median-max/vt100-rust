@@ -83,6 +83,67 @@ pub enum MouseProtocolEncoding {
     // Urxvt,
 }
 
+/// A pointer button in one normalized terminal mouse event.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum MouseButton {
+    /// No button is held.
+    None,
+    /// Primary button.
+    Left,
+    /// Middle button.
+    Middle,
+    /// Secondary button.
+    Right,
+}
+
+/// The phase of one normalized terminal mouse event.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum MouseEventKind {
+    /// Button press.
+    Press,
+    /// Button release.
+    Release,
+    /// Pointer motion.
+    Motion,
+}
+
+/// Modifiers carried by one normalized terminal mouse event.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub struct MouseModifiers {
+    /// Shift is held.
+    pub shift: bool,
+    /// Alt or Option is held.
+    pub alt: bool,
+    /// Control is held.
+    pub control: bool,
+    /// Meta or Command is held. The xterm mouse protocol represents it as Alt.
+    pub meta: bool,
+}
+
+/// One normalized terminal mouse event. Coordinates are zero-based cells.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct MouseEvent {
+    /// Zero-based screen row.
+    pub row: u16,
+    /// Zero-based screen column.
+    pub column: u16,
+    /// Event phase.
+    pub kind: MouseEventKind,
+    /// Pressed or released button, or the held button during motion.
+    pub button: MouseButton,
+    /// Keyboard modifiers held during the event.
+    pub modifiers: MouseModifiers,
+}
+
+/// Why the current terminal mode cannot encode a mouse event.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum MouseEncodeError {
+    /// The active mouse mode does not report this event.
+    EventNotReported,
+    /// The active legacy encoding cannot represent the cell coordinate.
+    PositionOutOfRange,
+}
+
 /// Terminal cursor shape selected by DECSCUSR.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum CursorShape {
@@ -736,6 +797,105 @@ impl Screen {
         self.mouse_protocol_encoding
     }
 
+    /// Encodes one mouse event using the currently parsed mode and encoding.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MouseEncodeError::EventNotReported`] when the active mode does not report the
+    /// event, or [`MouseEncodeError::PositionOutOfRange`] when a legacy encoding cannot represent
+    /// the cell coordinate.
+    pub fn encode_mouse_event(
+        &self,
+        event: MouseEvent,
+    ) -> Result<Vec<u8>, MouseEncodeError> {
+        let reported = match self.mouse_protocol_mode {
+            MouseProtocolMode::None => false,
+            MouseProtocolMode::Press => event.kind == MouseEventKind::Press,
+            MouseProtocolMode::PressRelease => {
+                event.kind != MouseEventKind::Motion
+            }
+            MouseProtocolMode::ButtonMotion => {
+                event.kind != MouseEventKind::Motion
+                    || event.button != MouseButton::None
+            }
+            MouseProtocolMode::AnyMotion => true,
+        };
+        if !reported {
+            return Err(MouseEncodeError::EventNotReported);
+        }
+
+        let button = match (event.kind, event.button) {
+            (MouseEventKind::Motion, MouseButton::Left) => 32,
+            (MouseEventKind::Motion, MouseButton::Middle) => 33,
+            (MouseEventKind::Motion, MouseButton::Right) => 34,
+            (MouseEventKind::Motion, MouseButton::None) => 35,
+            (_, MouseButton::Left) => 0,
+            (_, MouseButton::Middle) => 1,
+            (_, MouseButton::Right) => 2,
+            (_, MouseButton::None) => {
+                return Err(MouseEncodeError::EventNotReported)
+            }
+        };
+        let modifiers = u8::from(event.modifiers.shift) * 4
+            + u8::from(event.modifiers.alt || event.modifiers.meta) * 8
+            + u8::from(event.modifiers.control) * 16;
+        let code = button + modifiers;
+
+        if self.mouse_protocol_encoding == MouseProtocolEncoding::Sgr {
+            let suffix = if event.kind == MouseEventKind::Release {
+                'm'
+            } else {
+                'M'
+            };
+            return Ok(format!(
+                "\x1b[<{};{};{}{}",
+                code,
+                u32::from(event.column) + 1,
+                u32::from(event.row) + 1,
+                suffix,
+            )
+            .into_bytes());
+        }
+
+        let limit =
+            if self.mouse_protocol_encoding == MouseProtocolEncoding::Utf8 {
+                2015
+            } else {
+                223
+            };
+        if usize::from(event.row) >= limit
+            || usize::from(event.column) >= limit
+        {
+            return Err(MouseEncodeError::PositionOutOfRange);
+        }
+        let legacy_code = if event.kind == MouseEventKind::Release {
+            3 + modifiers
+        } else {
+            code
+        };
+        let mut output = b"\x1b[M".to_vec();
+        for value in [
+            u32::from(legacy_code) + 32,
+            u32::from(event.column) + 33,
+            u32::from(event.row) + 33,
+        ] {
+            if self.mouse_protocol_encoding == MouseProtocolEncoding::Utf8 {
+                let character = char::from_u32(value)
+                    .ok_or(MouseEncodeError::PositionOutOfRange)?;
+                let mut encoded = [0; 4];
+                output.extend_from_slice(
+                    character.encode_utf8(&mut encoded).as_bytes(),
+                );
+            } else {
+                output.push(
+                    u8::try_from(value)
+                        .map_err(|_| MouseEncodeError::PositionOutOfRange)?,
+                );
+            }
+        }
+        Ok(output)
+    }
+
     /// Returns the currently active foreground color.
     #[must_use]
     pub fn fgcolor(&self) -> crate::Color {
@@ -759,11 +919,11 @@ impl Screen {
         index: u8,
         color: RgbColor,
     ) {
-        self.theme_overrides.ansi[index as usize] = Some(color);
+        self.theme_overrides.ansi[usize::from(index)] = Some(color);
     }
 
     pub(crate) fn reset_palette_override(&mut self, index: u8) {
-        self.theme_overrides.ansi[index as usize] = None;
+        self.theme_overrides.ansi[usize::from(index)] = None;
     }
 
     pub(crate) fn reset_palette_overrides(&mut self) {

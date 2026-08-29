@@ -355,7 +355,7 @@ fn parse_component(value: &[u8]) -> Option<u8> {
     let digits = std::str::from_utf8(value).ok()?;
     let number = u32::from_str_radix(digits, 16).ok()?;
     let maximum = (1u32 << (value.len() * 4)) - 1;
-    Some(((number * 255 + maximum / 2) / maximum) as u8)
+    u8::try_from((number * 255 + maximum / 2) / maximum).ok()
 }
 
 fn canonicalize_params_1(params: &vte::Params, default: u16) -> u16 {
