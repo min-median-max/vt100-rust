@@ -392,6 +392,41 @@ impl Screen {
         }
     }
 
+    /// Returns plain text between signed logical rows without changing the scrollback viewport.
+    /// Row `-1` is the newest history row, row `0` is the first primary-screen row, and `end_col`
+    /// is exclusive, matching [`contents_between`](Self::contents_between).
+    #[must_use]
+    pub fn contents_between_logical(
+        &self,
+        start_row: i32,
+        start_col: u16,
+        end_row: i32,
+        end_col: u16,
+    ) -> String {
+        if (start_row, start_col) >= (end_row, end_col) {
+            return String::new();
+        }
+        let (_, cols) = self.size();
+        let mut contents = String::new();
+        for line in start_row..=end_row {
+            let Some(row) = self.grid().logical_row(line) else { continue };
+            let (column, width) = if start_row == end_row {
+                (start_col, end_col.saturating_sub(start_col))
+            } else if line == start_row {
+                (start_col, cols.saturating_sub(start_col))
+            } else if line == end_row {
+                (0, end_col)
+            } else {
+                (0, cols)
+            };
+            row.write_contents(&mut contents, column, width, false);
+            if line != end_row && !row.wrapped() {
+                contents.push('\n');
+            }
+        }
+        contents
+    }
+
     /// Return escape codes sufficient to reproduce the entire contents of the
     /// current terminal state. This is a convenience wrapper around
     /// [`contents_formatted`](Self::contents_formatted) and

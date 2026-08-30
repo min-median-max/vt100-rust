@@ -157,6 +157,14 @@ impl Grid {
         self.visible_rows().nth(usize::from(row))
     }
 
+    pub(crate) fn logical_row(&self, row: i32) -> Option<&crate::row::Row> {
+        if row < 0 {
+            let distance = usize::try_from(row.unsigned_abs()).ok()?;
+            return self.scrollback.get(self.scrollback.len().checked_sub(distance)?);
+        }
+        self.rows.get(usize::try_from(row).ok()?)
+    }
+
     pub fn drawing_row(&self, row: u16) -> Option<&crate::row::Row> {
         self.drawing_rows().nth(usize::from(row))
     }
