@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+* Expose DEC 9 X10 and DEC 1001 highlight tracking as distinct live mouse modes.
+* Suppress X10 modifiers, enforce each mode's press/release admission, and serialize both modes for rehydration.
+
 ### Added
 
 * DEC Special Graphics (line drawing) character set support: `ESC ( <final>` /

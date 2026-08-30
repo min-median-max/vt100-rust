@@ -173,8 +173,9 @@ where
     let name = <String>::deserialize(deserializer)?;
     match name.as_ref() {
         "none" => Ok(vt100::MouseProtocolMode::None),
-        "press" => Ok(vt100::MouseProtocolMode::Press),
+        "x10" => Ok(vt100::MouseProtocolMode::X10),
         "press_release" => Ok(vt100::MouseProtocolMode::PressRelease),
+        "highlight" => Ok(vt100::MouseProtocolMode::Highlight),
         "button_motion" => Ok(vt100::MouseProtocolMode::ButtonMotion),
         "any_motion" => Ok(vt100::MouseProtocolMode::AnyMotion),
         _ => unimplemented!(),
@@ -190,8 +191,9 @@ where
 {
     let s = match mode {
         vt100::MouseProtocolMode::None => "none",
-        vt100::MouseProtocolMode::Press => "press",
+        vt100::MouseProtocolMode::X10 => "x10",
         vt100::MouseProtocolMode::PressRelease => "press_release",
+        vt100::MouseProtocolMode::Highlight => "highlight",
         vt100::MouseProtocolMode::ButtonMotion => "button_motion",
         vt100::MouseProtocolMode::AnyMotion => "any_motion",
     };

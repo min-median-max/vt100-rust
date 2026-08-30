@@ -1,6 +1,6 @@
 use vt100::{
-    MouseButton, MouseEncodeError, MouseEvent, MouseEventKind, MouseModifiers,
-    MouseProtocolMode, Parser,
+    MouseButton, MouseEncodeError, MouseEvent, MouseEventKind,
+    MouseModifiers, MouseProtocolMode, Parser,
 };
 
 fn event(kind: MouseEventKind, button: MouseButton) -> MouseEvent {
@@ -65,7 +65,10 @@ fn live_screen_encodes_sgr_press_drag_release_and_free_motion() {
 fn dec9_x10_suppresses_modifiers_and_reports_only_presses() {
     let mut parser = Parser::new(40, 120, 0);
     parser.process(b"\x1b[?9h");
-    assert_eq!(parser.screen().mouse_protocol_mode(), MouseProtocolMode::X10);
+    assert_eq!(
+        parser.screen().mouse_protocol_mode(),
+        MouseProtocolMode::X10
+    );
 
     let modified = MouseModifiers {
         shift: true,
@@ -84,12 +87,10 @@ fn dec9_x10_suppresses_modifiers_and_reports_only_presses() {
         [0x1b, b'[', b'M', 32, 34, 35],
     );
     assert_eq!(
-        parser
-            .screen()
-            .encode_mouse_event(MouseEvent {
-                modifiers: modified,
-                ..event(MouseEventKind::Release, MouseButton::Left)
-            }),
+        parser.screen().encode_mouse_event(MouseEvent {
+            modifiers: modified,
+            ..event(MouseEventKind::Release, MouseButton::Left)
+        }),
         Err(MouseEncodeError::EventNotReported),
     );
 }
@@ -130,9 +131,10 @@ fn dec1001_highlight_is_distinct_and_reports_press_and_release() {
         [0x1b, b'[', b'M', 63, 34, 35],
     );
     assert_eq!(
-        parser
-            .screen()
-            .encode_mouse_event(event(MouseEventKind::Motion, MouseButton::Left)),
+        parser.screen().encode_mouse_event(event(
+            MouseEventKind::Motion,
+            MouseButton::Left
+        )),
         Err(MouseEncodeError::EventNotReported),
     );
 }

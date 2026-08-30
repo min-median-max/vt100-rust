@@ -487,12 +487,19 @@ fn contents_between() {
 }
 
 #[test]
-fn contents_between_logical_rows_includes_scrollback_without_moving_the_view() {
+fn contents_between_logical_rows_includes_scrollback_without_moving_the_view()
+{
     let mut parser = vt100::Parser::new(2, 4, 10);
     parser.process(b"1\r\n2\r\n3\r\n4");
     assert_eq!(parser.screen().scrollback(), 0);
-    assert_eq!(parser.screen().contents_between_logical(-2, 0, -1, 1), "1\n2");
-    assert_eq!(parser.screen().contents_between_logical(-1, 0, 1, 1), "2\n3\n4");
+    assert_eq!(
+        parser.screen().contents_between_logical(-2, 0, -1, 1),
+        "1\n2"
+    );
+    assert_eq!(
+        parser.screen().contents_between_logical(-1, 0, 1, 1),
+        "2\n3\n4"
+    );
     assert_eq!(parser.screen().scrollback(), 0);
 }
 

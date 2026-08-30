@@ -160,7 +160,9 @@ impl Grid {
     pub(crate) fn logical_row(&self, row: i32) -> Option<&crate::row::Row> {
         if row < 0 {
             let distance = usize::try_from(row.unsigned_abs()).ok()?;
-            return self.scrollback.get(self.scrollback.len().checked_sub(distance)?);
+            return self
+                .scrollback
+                .get(self.scrollback.len().checked_sub(distance)?);
         }
         self.rows.get(usize::try_from(row).ok()?)
     }

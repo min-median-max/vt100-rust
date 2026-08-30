@@ -47,15 +47,19 @@ pub enum MouseProtocolMode {
     #[default]
     None,
 
-    /// Mouse button events should be reported on button press. Also known as
-    /// X10 mouse mode.
-    Press,
+    /// DEC private mode 9. Mouse button events are reported on press only and
+    /// keyboard modifiers are not encoded.
+    X10,
 
     /// Mouse button events should be reported on button press and release.
     /// Also known as VT200 mouse mode.
     PressRelease,
 
-    // Highlight,
+    /// DEC private mode 1001. Mouse button presses and releases are reported
+    /// for highlight tracking; motion remains owned by the highlighting
+    /// handshake rather than the ordinary pointer event stream.
+    Highlight,
+
     /// Mouse button events should be reported on button press and release, as
     /// well as when the mouse moves between cells while a button is held
     /// down.
@@ -409,7 +413,9 @@ impl Screen {
         let (_, cols) = self.size();
         let mut contents = String::new();
         for line in start_row..=end_row {
-            let Some(row) = self.grid().logical_row(line) else { continue };
+            let Some(row) = self.grid().logical_row(line) else {
+                continue;
+            };
             let (column, width) = if start_row == end_row {
                 (start_col, end_col.saturating_sub(start_col))
             } else if line == start_row {
@@ -845,8 +851,9 @@ impl Screen {
     ) -> Result<Vec<u8>, MouseEncodeError> {
         let reported = match self.mouse_protocol_mode {
             MouseProtocolMode::None => false,
-            MouseProtocolMode::Press => event.kind == MouseEventKind::Press,
-            MouseProtocolMode::PressRelease => {
+            MouseProtocolMode::X10 => event.kind == MouseEventKind::Press,
+            MouseProtocolMode::PressRelease
+            | MouseProtocolMode::Highlight => {
                 event.kind != MouseEventKind::Motion
             }
             MouseProtocolMode::ButtonMotion => {
@@ -871,9 +878,14 @@ impl Screen {
                 return Err(MouseEncodeError::EventNotReported)
             }
         };
-        let modifiers = u8::from(event.modifiers.shift) * 4
-            + u8::from(event.modifiers.alt || event.modifiers.meta) * 8
-            + u8::from(event.modifiers.control) * 16;
+        let modifiers = if self.mouse_protocol_mode == MouseProtocolMode::X10
+        {
+            0
+        } else {
+            u8::from(event.modifiers.shift) * 4
+                + u8::from(event.modifiers.alt || event.modifiers.meta) * 8
+                + u8::from(event.modifiers.control) * 16
+        };
         let code = button + modifiers;
 
         if self.mouse_protocol_encoding == MouseProtocolEncoding::Sgr {
@@ -1569,13 +1581,14 @@ impl Screen {
             match param {
                 [1] => self.set_mode(MODE_APPLICATION_CURSOR),
                 [6] => self.grid_mut().set_origin_mode(true),
-                [9] => self.set_mouse_mode(MouseProtocolMode::Press),
+                [9] => self.set_mouse_mode(MouseProtocolMode::X10),
                 [12] => self.cursor_style.blinking = true,
                 [25] => self.clear_mode(MODE_HIDE_CURSOR),
                 [47] => self.enter_alternate_grid(),
                 [1000] => {
                     self.set_mouse_mode(MouseProtocolMode::PressRelease);
                 }
+                [1001] => self.set_mouse_mode(MouseProtocolMode::Highlight),
                 [1002] => {
                     self.set_mouse_mode(MouseProtocolMode::ButtonMotion);
                 }
@@ -1607,7 +1620,7 @@ impl Screen {
             match param {
                 [1] => self.clear_mode(MODE_APPLICATION_CURSOR),
                 [6] => self.grid_mut().set_origin_mode(false),
-                [9] => self.clear_mouse_mode(MouseProtocolMode::Press),
+                [9] => self.clear_mouse_mode(MouseProtocolMode::X10),
                 [12] => self.cursor_style.blinking = false,
                 [25] => self.set_mode(MODE_HIDE_CURSOR),
                 [47] => {
@@ -1615,6 +1628,9 @@ impl Screen {
                 }
                 [1000] => {
                     self.clear_mouse_mode(MouseProtocolMode::PressRelease);
+                }
+                [1001] => {
+                    self.clear_mouse_mode(MouseProtocolMode::Highlight);
                 }
                 [1002] => {
                     self.clear_mouse_mode(MouseProtocolMode::ButtonMotion);

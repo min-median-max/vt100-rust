@@ -474,11 +474,14 @@ impl BufWrite for MouseProtocolMode {
         match self.mode {
             crate::MouseProtocolMode::None => match self.prev {
                 crate::MouseProtocolMode::None => {}
-                crate::MouseProtocolMode::Press => {
+                crate::MouseProtocolMode::X10 => {
                     buf.extend_from_slice(b"\x1b[?9l");
                 }
                 crate::MouseProtocolMode::PressRelease => {
                     buf.extend_from_slice(b"\x1b[?1000l");
+                }
+                crate::MouseProtocolMode::Highlight => {
+                    buf.extend_from_slice(b"\x1b[?1001l");
                 }
                 crate::MouseProtocolMode::ButtonMotion => {
                     buf.extend_from_slice(b"\x1b[?1002l");
@@ -487,11 +490,14 @@ impl BufWrite for MouseProtocolMode {
                     buf.extend_from_slice(b"\x1b[?1003l");
                 }
             },
-            crate::MouseProtocolMode::Press => {
+            crate::MouseProtocolMode::X10 => {
                 buf.extend_from_slice(b"\x1b[?9h");
             }
             crate::MouseProtocolMode::PressRelease => {
                 buf.extend_from_slice(b"\x1b[?1000h");
+            }
+            crate::MouseProtocolMode::Highlight => {
+                buf.extend_from_slice(b"\x1b[?1001h");
             }
             crate::MouseProtocolMode::ButtonMotion => {
                 buf.extend_from_slice(b"\x1b[?1002h");
